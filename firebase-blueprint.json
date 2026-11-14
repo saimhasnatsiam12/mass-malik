@@ -1,0 +1,298 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile, active mess preference, and theme settings.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID." },
+        "displayName": { "type": "string", "description": "User full display name." },
+        "email": { "type": "string", "description": "User email address (PII)." },
+        "phone": { "type": "string", "description": "Optional phone number (PII)." },
+        "photoUrl": { "type": "string", "description": "Optional avatar URL." },
+        "activeMessId": { "type": "string", "description": "Currently selected mess ID." },
+        "themeMode": { "type": "string", "enum": ["system", "light", "dark"] },
+        "isDeactivated": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "displayName", "themeMode", "isDeactivated", "createdAt", "updatedAt"]
+    },
+    "MessInvite": {
+      "title": "MessInvite",
+      "description": "Lookup document keyed by secret inviteCode for joining a mess.",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "messName": { "type": "string" },
+        "messAddress": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "managerUids": { "type": "array" },
+        "inviteCode": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "messName", "ownerId", "managerUids", "inviteCode", "isActive", "createdAt", "updatedAt"]
+    },
+    "Mess": {
+      "title": "Mess",
+      "description": "Multi-tenant mess entity holding configuration, roles, and closed months.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "description": { "type": "string" },
+        "currencySymbol": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "managerUids": { "type": "array" },
+        "assistantUids": { "type": "array" },
+        "memberUids": { "type": "array" },
+        "inviteCode": { "type": "string" },
+        "allowMultipleManagers": { "type": "boolean" },
+        "availableSeats": { "type": "integer" },
+        "seatRentInfo": { "type": "string" },
+        "isArchived": { "type": "boolean" },
+        "closedMonths": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "currencySymbol", "ownerId", "managerUids", "assistantUids", "memberUids", "inviteCode", "allowMultipleManagers", "availableSeats", "isArchived", "closedMonths", "createdAt", "updatedAt"]
+    },
+    "MessMember": {
+      "title": "MessMember",
+      "description": "Member profile, role, and active status within a mess.",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["owner", "manager", "assistant_manager", "member"] },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "memberUids": { "type": "array" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "userId", "displayName", "role", "status", "memberUids", "joinedAt", "updatedAt"]
+    },
+    "JoinRequest": {
+      "title": "JoinRequest",
+      "description": "Pending or processed request to join a mess via invite code.",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "applicantUid": { "type": "string" },
+        "applicantName": { "type": "string" },
+        "inviteCode": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "managerUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "applicantUid", "applicantName", "inviteCode", "status", "managerUids", "createdAt", "updatedAt"]
+    },
+    "MealEntry": {
+      "title": "MealEntry",
+      "description": "Daily breakfast, lunch, and dinner counts for a member.",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "monthKey": { "type": "string" },
+        "date": { "type": "string" },
+        "memberUid": { "type": "string" },
+        "memberName": { "type": "string" },
+        "breakfast": { "type": "number" },
+        "lunch": { "type": "number" },
+        "dinner": { "type": "number" },
+        "totalMeals": { "type": "number" },
+        "enteredByUid": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "monthKey", "date", "memberUid", "memberName", "breakfast", "lunch", "dinner", "totalMeals", "enteredByUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Bazar, shared utility, or individual expense stored in integer minor units (paisa).",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "monthKey": { "type": "string" },
+        "date": { "type": "string" },
+        "category": { "type": "string", "enum": ["bazar", "shared_fixed", "other_individual"] },
+        "description": { "type": "string" },
+        "amountPaisa": { "type": "integer" },
+        "purchasedByUid": { "type": "string" },
+        "purchasedByName": { "type": "string" },
+        "targetMemberUid": { "type": "string" },
+        "receiptUri": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "approvedByUid": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "monthKey", "date", "category", "description", "amountPaisa", "purchasedByUid", "purchasedByName", "status", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Deposit": {
+      "title": "Deposit",
+      "description": "Member cash or digital deposit in integer minor units (paisa).",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "monthKey": { "type": "string" },
+        "date": { "type": "string" },
+        "memberUid": { "type": "string" },
+        "memberName": { "type": "string" },
+        "amountPaisa": { "type": "integer" },
+        "method": { "type": "string", "enum": ["cash", "bkash", "nagad", "bank", "other"] },
+        "note": { "type": "string" },
+        "recordedByUid": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "monthKey", "date", "memberUid", "memberName", "amountPaisa", "method", "recordedByUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Adjustment": {
+      "title": "Adjustment",
+      "description": "Manual credit or debit adjustment in integer minor units (paisa).",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "monthKey": { "type": "string" },
+        "memberUid": { "type": "string" },
+        "memberName": { "type": "string" },
+        "amountPaisa": { "type": "integer" },
+        "reason": { "type": "string" },
+        "recordedByUid": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "monthKey", "memberUid", "memberName", "amountPaisa", "reason", "recordedByUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "MonthlyClosing": {
+      "title": "MonthlyClosing",
+      "description": "Locked monthly financial closing snapshot.",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "monthKey": { "type": "string" },
+        "totalMealExpensePaisa": { "type": "integer" },
+        "totalMealsText": { "type": "string" },
+        "mealRateText": { "type": "string" },
+        "totalDepositPaisa": { "type": "integer" },
+        "totalExpensePaisa": { "type": "integer" },
+        "closedByUid": { "type": "string" },
+        "closedByName": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "monthKey", "totalMealExpensePaisa", "totalMealsText", "mealRateText", "totalDepositPaisa", "totalExpensePaisa", "closedByUid", "closedByName", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Mess notice posted by managers or owners.",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "pinned": { "type": "boolean" },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "title", "body", "authorUid", "authorName", "pinned", "memberUids", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Mess group chat message.",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "senderUid": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "senderUid", "senderName", "text", "memberUids", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable activity and financial audit log entry.",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "actorUid": { "type": "string" },
+        "actorName": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "action", "details", "actorUid", "actorName", "memberUids", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profile."
+    },
+    "/invites/{inviteCode}": {
+      "schema": { "$ref": "#/entities/MessInvite" },
+      "description": "Secret invite code lookup document."
+    },
+    "/messes/{messId}": {
+      "schema": { "$ref": "#/entities/Mess" },
+      "description": "Multi-tenant mess workspace."
+    },
+    "/messes/{messId}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/MessMember" },
+      "description": "Mess members and roles."
+    },
+    "/messes/{messId}/join_requests/{applicantUid}": {
+      "schema": { "$ref": "#/entities/JoinRequest" },
+      "description": "Pending and processed join requests."
+    },
+    "/messes/{messId}/meals/{mealId}": {
+      "schema": { "$ref": "#/entities/MealEntry" },
+      "description": "Daily meal entries."
+    },
+    "/messes/{messId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Bazar and mess expenses."
+    },
+    "/messes/{messId}/deposits/{depositId}": {
+      "schema": { "$ref": "#/entities/Deposit" },
+      "description": "Member deposit ledger."
+    },
+    "/messes/{messId}/adjustments/{adjustmentId}": {
+      "schema": { "$ref": "#/entities/Adjustment" },
+      "description": "Manual member balance adjustments."
+    },
+    "/messes/{messId}/closings/{monthKey}": {
+      "schema": { "$ref": "#/entities/MonthlyClosing" },
+      "description": "Monthly closing snapshots."
+    },
+    "/messes/{messId}/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Mess announcements."
+    },
+    "/messes/{messId}/chat/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Mess group chat messages."
+    },
+    "/messes/{messId}/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Audit log entries."
+    }
+  }
+}

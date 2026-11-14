@@ -1,0 +1,645 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isStringBounded(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isStringListBounded(listVal, maxLen) {
+      return listVal is list && listVal.size() <= maxLen && (listVal.size() == 0 || listVal[0] is string);
+    }
+
+    function messPath(messId) {
+      return /databases/$(database)/documents/messes/$(messId);
+    }
+
+    function messDoc(messId) {
+      return get(messPath(messId));
+    }
+
+    function isMessMember(messId) {
+      return isSignedIn() &&
+             exists(messPath(messId)) &&
+             request.auth.uid in messDoc(messId).data.memberUids;
+    }
+
+    function isMessManager(messId) {
+      return isSignedIn() &&
+             exists(messPath(messId)) &&
+             (messDoc(messId).data.ownerId == request.auth.uid ||
+              request.auth.uid in messDoc(messId).data.managerUids);
+    }
+
+    function isMessAdminOrAssistant(messId) {
+      return isSignedIn() &&
+             exists(messPath(messId)) &&
+             (messDoc(messId).data.ownerId == request.auth.uid ||
+              request.auth.uid in messDoc(messId).data.managerUids ||
+              request.auth.uid in messDoc(messId).data.assistantUids);
+    }
+
+    function isMonthOpen(messId, monthKey) {
+      return exists(messPath(messId)) &&
+             !(monthKey in messDoc(messId).data.closedMonths);
+    }
+
+    function isValidUserProfile(data) {
+      return isStringBounded(data.userId, 1, 128) &&
+             isStringBounded(data.displayName, 1, 80) &&
+             (!('email' in data) || data.email == null || isStringBounded(data.email, 0, 120)) &&
+             (!('phone' in data) || data.phone == null || isStringBounded(data.phone, 0, 30)) &&
+             (!('photoUrl' in data) || data.photoUrl == null || isStringBounded(data.photoUrl, 0, 500)) &&
+             (!('activeMessId' in data) || data.activeMessId == null || isStringBounded(data.activeMessId, 0, 128)) &&
+             data.themeMode in ['system', 'light', 'dark'] &&
+             data.isDeactivated is bool;
+    }
+
+    function isValidInvite(data) {
+      return isValidId(data.messId) &&
+             isStringBounded(data.messName, 2, 80) &&
+             (!('messAddress' in data) || data.messAddress == null || isStringBounded(data.messAddress, 0, 200)) &&
+             isValidId(data.ownerId) &&
+             isStringListBounded(data.managerUids, 20) &&
+             isValidId(data.inviteCode) &&
+             data.isActive is bool;
+    }
+
+    function isValidMess(data) {
+      return isStringBounded(data.name, 2, 80) &&
+             (!('address' in data) || data.address == null || isStringBounded(data.address, 0, 200)) &&
+             (!('description' in data) || data.description == null || isStringBounded(data.description, 0, 400)) &&
+             isStringBounded(data.currencySymbol, 1, 6) &&
+             isValidId(data.ownerId) &&
+             isStringListBounded(data.managerUids, 20) &&
+             isStringListBounded(data.assistantUids, 20) &&
+             isStringListBounded(data.memberUids, 50) &&
+             data.memberUids.size() >= 1 &&
+             data.ownerId in data.memberUids &&
+             data.ownerId in data.managerUids &&
+             isValidId(data.inviteCode) &&
+             data.allowMultipleManagers is bool &&
+             data.availableSeats is int && data.availableSeats >= 0 && data.availableSeats <= 100 &&
+             (!('seatRentInfo' in data) || data.seatRentInfo == null || isStringBounded(data.seatRentInfo, 0, 200)) &&
+             data.isArchived is bool &&
+             isStringListBounded(data.closedMonths, 60);
+    }
+
+    function isValidMember(data) {
+      return isValidId(data.messId) &&
+             isValidId(data.userId) &&
+             isStringBounded(data.displayName, 1, 80) &&
+             data.role in ['owner', 'manager', 'assistant_manager', 'member'] &&
+             data.status in ['active', 'inactive'] &&
+             isStringListBounded(data.memberUids, 50);
+    }
+
+    function isValidJoinRequest(data) {
+      return isValidId(data.messId) &&
+             isValidId(data.applicantUid) &&
+             isStringBounded(data.applicantName, 1, 80) &&
+             isValidId(data.inviteCode) &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             isStringListBounded(data.managerUids, 20);
+    }
+
+    function isValidMeal(data) {
+      return isValidId(data.messId) &&
+             isStringBounded(data.monthKey, 7, 7) &&
+             isStringBounded(data.date, 10, 10) &&
+             isValidId(data.memberUid) &&
+             isStringBounded(data.memberName, 1, 80) &&
+             data.breakfast is number && data.breakfast >= 0 && data.breakfast <= 20 &&
+             data.lunch is number && data.lunch >= 0 && data.lunch <= 20 &&
+             data.dinner is number && data.dinner >= 0 && data.dinner <= 20 &&
+             data.totalMeals is number && data.totalMeals >= 0 && data.totalMeals <= 60 &&
+             isValidId(data.enteredByUid) &&
+             isStringListBounded(data.memberUids, 50);
+    }
+
+    function isValidExpense(data) {
+      return isValidId(data.messId) &&
+             isStringBounded(data.monthKey, 7, 7) &&
+             isStringBounded(data.date, 10, 10) &&
+             data.category in ['bazar', 'shared_fixed', 'other_individual'] &&
+             isStringBounded(data.description, 1, 200) &&
+             data.amountPaisa is int && data.amountPaisa > 0 && data.amountPaisa <= 1000000000 &&
+             isValidId(data.purchasedByUid) &&
+             isStringBounded(data.purchasedByName, 1, 80) &&
+             (!('targetMemberUid' in data) || data.targetMemberUid == null || isStringBounded(data.targetMemberUid, 0, 128)) &&
+             (!('receiptUri' in data) || data.receiptUri == null || isStringBounded(data.receiptUri, 0, 500)) &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             (!('approvedByUid' in data) || data.approvedByUid == null || isStringBounded(data.approvedByUid, 0, 128)) &&
+             isStringListBounded(data.memberUids, 50);
+    }
+
+    function isValidDeposit(data) {
+      return isValidId(data.messId) &&
+             isStringBounded(data.monthKey, 7, 7) &&
+             isStringBounded(data.date, 10, 10) &&
+             isValidId(data.memberUid) &&
+             isStringBounded(data.memberName, 1, 80) &&
+             data.amountPaisa is int && data.amountPaisa > 0 && data.amountPaisa <= 1000000000 &&
+             data.method in ['cash', 'bkash', 'nagad', 'bank', 'other'] &&
+             (!('note' in data) || data.note == null || isStringBounded(data.note, 0, 150)) &&
+             isValidId(data.recordedByUid) &&
+             isStringListBounded(data.memberUids, 50);
+    }
+
+    function isValidAdjustment(data) {
+      return isValidId(data.messId) &&
+             isStringBounded(data.monthKey, 7, 7) &&
+             isValidId(data.memberUid) &&
+             isStringBounded(data.memberName, 1, 80) &&
+             data.amountPaisa is int && data.amountPaisa >= -1000000000 && data.amountPaisa <= 1000000000 &&
+             isStringBounded(data.reason, 1, 200) &&
+             isValidId(data.recordedByUid) &&
+             isStringListBounded(data.memberUids, 50);
+    }
+
+    function isValidClosing(data) {
+      return isValidId(data.messId) &&
+             isStringBounded(data.monthKey, 7, 7) &&
+             data.totalMealExpensePaisa is int && data.totalMealExpensePaisa >= 0 &&
+             isStringBounded(data.totalMealsText, 1, 30) &&
+             isStringBounded(data.mealRateText, 1, 30) &&
+             data.totalDepositPaisa is int && data.totalDepositPaisa >= 0 &&
+             data.totalExpensePaisa is int && data.totalExpensePaisa >= 0 &&
+             isValidId(data.closedByUid) &&
+             isStringBounded(data.closedByName, 1, 80) &&
+             isStringListBounded(data.memberUids, 50);
+    }
+
+    function isValidAnnouncement(data) {
+      return isValidId(data.messId) &&
+             isStringBounded(data.title, 1, 100) &&
+             isStringBounded(data.body, 1, 1000) &&
+             isValidId(data.authorUid) &&
+             isStringBounded(data.authorName, 1, 80) &&
+             data.pinned is bool &&
+             isStringListBounded(data.memberUids, 50);
+    }
+
+    function isValidChatMessage(data) {
+      return isValidId(data.messId) &&
+             isValidId(data.senderUid) &&
+             isStringBounded(data.senderName, 1, 80) &&
+             isStringBounded(data.text, 1, 1000) &&
+             isStringListBounded(data.memberUids, 50);
+    }
+
+    function isValidAuditLog(data) {
+      return isValidId(data.messId) &&
+             isStringBounded(data.action, 1, 60) &&
+             isStringBounded(data.details, 1, 300) &&
+             isValidId(data.actorUid) &&
+             isStringBounded(data.actorName, 1, 80) &&
+             isStringListBounded(data.memberUids, 50);
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'themeMode', 'isDeactivated', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'phone', 'photoUrl', 'activeMessId', 'themeMode', 'isDeactivated', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming()) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidUserProfile(incoming()) &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'phone', 'photoUrl', 'activeMessId', 'themeMode', 'isDeactivated', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /invites/{inviteCode} {
+      allow get: if isSignedIn() && isValidId(inviteCode);
+      allow list: if false;
+      allow create: if isSignedIn() &&
+                       isValidId(inviteCode) &&
+                       incoming().inviteCode == inviteCode &&
+                       incoming().keys().hasAll(['messId', 'messName', 'ownerId', 'managerUids', 'inviteCode', 'isActive', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['messId', 'messName', 'messAddress', 'ownerId', 'managerUids', 'inviteCode', 'isActive', 'createdAt', 'updatedAt']) &&
+                       isValidInvite(incoming()) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       (isMessManager(incoming().messId) ||
+                        (existsAfter(messPath(incoming().messId)) &&
+                         getAfter(messPath(incoming().messId)).data.ownerId == request.auth.uid));
+      allow update: if isSignedIn() &&
+                       isValidId(inviteCode) &&
+                       isMessManager(existing().messId) &&
+                       incoming().messId == existing().messId &&
+                       incoming().inviteCode == existing().inviteCode &&
+                       incoming().ownerId == existing().ownerId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidInvite(incoming()) &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['messName', 'messAddress', 'managerUids', 'isActive', 'updatedAt']);
+      allow delete: if isSignedIn() && isValidId(inviteCode) && isMessManager(existing().messId);
+    }
+
+    match /messes/{messId} {
+      allow get: if isSignedIn() && isValidId(messId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() &&
+                       isValidId(messId) &&
+                       incoming().keys().hasAll(['name', 'currencySymbol', 'ownerId', 'managerUids', 'assistantUids', 'memberUids', 'inviteCode', 'allowMultipleManagers', 'availableSeats', 'isArchived', 'closedMonths', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['name', 'address', 'description', 'currencySymbol', 'ownerId', 'managerUids', 'assistantUids', 'memberUids', 'inviteCode', 'allowMultipleManagers', 'availableSeats', 'seatRentInfo', 'isArchived', 'closedMonths', 'createdAt', 'updatedAt']) &&
+                       isValidMess(incoming()) &&
+                       incoming().ownerId == request.auth.uid &&
+                       incoming().memberUids == [request.auth.uid] &&
+                       incoming().managerUids == [request.auth.uid] &&
+                       incoming().assistantUids == [] &&
+                       incoming().closedMonths == [] &&
+                       incoming().isArchived == false &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isSignedIn() &&
+                       isValidId(messId) &&
+                       isValidMess(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       (
+                         (
+                           (request.auth.uid == existing().ownerId || request.auth.uid in existing().managerUids) &&
+                           incoming().ownerId == existing().ownerId &&
+                           incoming().managerUids == existing().managerUids &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'address', 'description', 'currencySymbol', 'inviteCode', 'allowMultipleManagers', 'availableSeats', 'seatRentInfo', 'closedMonths', 'updatedAt'])
+                         ) ||
+                         (
+                           (request.auth.uid == existing().ownerId || request.auth.uid in existing().managerUids) &&
+                           incoming().ownerId == existing().ownerId &&
+                           (incoming().managerUids == existing().managerUids || request.auth.uid == existing().ownerId) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'assistantUids', 'managerUids', 'updatedAt'])
+                         ) ||
+                         (
+                           request.auth.uid == existing().ownerId &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['ownerId', 'managerUids', 'assistantUids', 'isArchived', 'updatedAt'])
+                         )
+                       );
+      allow delete: if isSignedIn() && isValidId(messId) && existing().ownerId == request.auth.uid;
+
+      match /members/{memberUid} {
+        allow get: if isSignedIn() && isValidId(messId) && isValidId(memberUid) && isMessMember(messId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(memberUid) &&
+                         incoming().messId == messId &&
+                         incoming().userId == memberUid &&
+                         incoming().keys().hasAll(['messId', 'userId', 'displayName', 'role', 'status', 'memberUids', 'joinedAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['messId', 'userId', 'displayName', 'role', 'status', 'memberUids', 'joinedAt', 'updatedAt']) &&
+                         isValidMember(incoming()) &&
+                         isValidTimestamp(incoming().joinedAt) &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         (isMessManager(messId) ||
+                          (memberUid == request.auth.uid &&
+                           incoming().role == 'owner' &&
+                           existsAfter(messPath(messId)) &&
+                           getAfter(messPath(messId)).data.ownerId == request.auth.uid));
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(memberUid) &&
+                         isValidMember(incoming()) &&
+                         incoming().messId == existing().messId &&
+                         incoming().userId == existing().userId &&
+                         incoming().joinedAt == existing().joinedAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         (
+                           (isMessManager(messId) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['role', 'status', 'displayName', 'memberUids', 'updatedAt'])) ||
+                           (request.auth.uid == memberUid &&
+                            isMessMember(messId) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']))
+                         );
+        allow delete: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(memberUid) &&
+                         isMessManager(messId) &&
+                         memberUid != messDoc(messId).data.ownerId;
+      }
+
+      match /join_requests/{applicantUid} {
+        allow get: if isSignedIn() &&
+                      isValidId(messId) &&
+                      isValidId(applicantUid) &&
+                      (request.auth.uid == applicantUid || isMessManager(messId));
+        allow list: if isSignedIn() && request.auth.uid in resource.data.managerUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(applicantUid) &&
+                         request.auth.uid == applicantUid &&
+                         incoming().messId == messId &&
+                         incoming().applicantUid == request.auth.uid &&
+                         incoming().status == 'pending' &&
+                         incoming().keys().hasAll(['messId', 'applicantUid', 'applicantName', 'inviteCode', 'status', 'managerUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['messId', 'applicantUid', 'applicantName', 'inviteCode', 'status', 'managerUids', 'createdAt', 'updatedAt']) &&
+                         isValidJoinRequest(incoming()) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         exists(/databases/$(database)/documents/invites/$(incoming().inviteCode)) &&
+                         get(/databases/$(database)/documents/invites/$(incoming().inviteCode)).data.messId == messId &&
+                         get(/databases/$(database)/documents/invites/$(incoming().inviteCode)).data.isActive == true &&
+                         incoming().managerUids == get(/databases/$(database)/documents/invites/$(incoming().inviteCode)).data.managerUids;
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(applicantUid) &&
+                         isMessManager(messId) &&
+                         existing().status == 'pending' &&
+                         isValidJoinRequest(incoming()) &&
+                         incoming().messId == existing().messId &&
+                         incoming().applicantUid == existing().applicantUid &&
+                         incoming().inviteCode == existing().inviteCode &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'managerUids', 'updatedAt']);
+        allow delete: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(applicantUid) &&
+                         (request.auth.uid == applicantUid || isMessManager(messId));
+      }
+
+      match /meals/{mealId} {
+        allow get: if isSignedIn() && isValidId(messId) && isValidId(mealId) && isMessMember(messId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(mealId) &&
+                         incoming().messId == messId &&
+                         incoming().enteredByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['messId', 'monthKey', 'date', 'memberUid', 'memberName', 'breakfast', 'lunch', 'dinner', 'totalMeals', 'enteredByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['messId', 'monthKey', 'date', 'memberUid', 'memberName', 'breakfast', 'lunch', 'dinner', 'totalMeals', 'enteredByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         isValidMeal(incoming()) &&
+                         isMonthOpen(messId, incoming().monthKey) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         (isMessAdminOrAssistant(messId) || (isMessMember(messId) && incoming().memberUid == request.auth.uid));
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(mealId) &&
+                         isValidMeal(incoming()) &&
+                         incoming().messId == existing().messId &&
+                         incoming().monthKey == existing().monthKey &&
+                         incoming().memberUid == existing().memberUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         (
+                           (isMessManager(messId) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt'])) ||
+                           (isMonthOpen(messId, existing().monthKey) &&
+                            (isMessAdminOrAssistant(messId) || (isMessMember(messId) && existing().memberUid == request.auth.uid)) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['breakfast', 'lunch', 'dinner', 'totalMeals', 'enteredByUid', 'memberName', 'updatedAt']))
+                         );
+        allow delete: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(mealId) &&
+                         isMonthOpen(messId, existing().monthKey) &&
+                         isMessAdminOrAssistant(messId);
+      }
+
+      match /expenses/{expenseId} {
+        allow get: if isSignedIn() && isValidId(messId) && isValidId(expenseId) && isMessMember(messId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(expenseId) &&
+                         incoming().messId == messId &&
+                         incoming().purchasedByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['messId', 'monthKey', 'date', 'category', 'description', 'amountPaisa', 'purchasedByUid', 'purchasedByName', 'status', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['messId', 'monthKey', 'date', 'category', 'description', 'amountPaisa', 'purchasedByUid', 'purchasedByName', 'targetMemberUid', 'receiptUri', 'status', 'approvedByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         isValidExpense(incoming()) &&
+                         isMonthOpen(messId, incoming().monthKey) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         ((isMessAdminOrAssistant(messId) && incoming().status in ['approved', 'pending']) ||
+                          (isMessMember(messId) && incoming().status == 'pending'));
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(expenseId) &&
+                         isValidExpense(incoming()) &&
+                         incoming().messId == existing().messId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         (
+                           (isMessManager(messId) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt'])) ||
+                           (isMonthOpen(messId, existing().monthKey) &&
+                            isMessAdminOrAssistant(messId) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['category', 'description', 'amountPaisa', 'date', 'monthKey', 'targetMemberUid', 'receiptUri', 'status', 'approvedByUid', 'updatedAt']))
+                         );
+        allow delete: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(expenseId) &&
+                         isMonthOpen(messId, existing().monthKey) &&
+                         (isMessAdminOrAssistant(messId) || (existing().purchasedByUid == request.auth.uid && existing().status == 'pending'));
+      }
+
+      match /deposits/{depositId} {
+        allow get: if isSignedIn() && isValidId(messId) && isValidId(depositId) && isMessMember(messId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(depositId) &&
+                         incoming().messId == messId &&
+                         incoming().recordedByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['messId', 'monthKey', 'date', 'memberUid', 'memberName', 'amountPaisa', 'method', 'recordedByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['messId', 'monthKey', 'date', 'memberUid', 'memberName', 'amountPaisa', 'method', 'note', 'recordedByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         isValidDeposit(incoming()) &&
+                         isMonthOpen(messId, incoming().monthKey) &&
+                         isMessAdminOrAssistant(messId) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(depositId) &&
+                         isValidDeposit(incoming()) &&
+                         incoming().messId == existing().messId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         (
+                           (isMessManager(messId) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt'])) ||
+                           (isMonthOpen(messId, existing().monthKey) &&
+                            isMessAdminOrAssistant(messId) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['amountPaisa', 'method', 'note', 'date', 'monthKey', 'memberUid', 'memberName', 'updatedAt']))
+                         );
+        allow delete: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(depositId) &&
+                         isMonthOpen(messId, existing().monthKey) &&
+                         isMessAdminOrAssistant(messId);
+      }
+
+      match /adjustments/{adjustmentId} {
+        allow get: if isSignedIn() && isValidId(messId) && isValidId(adjustmentId) && isMessMember(messId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(adjustmentId) &&
+                         incoming().messId == messId &&
+                         incoming().recordedByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['messId', 'monthKey', 'memberUid', 'memberName', 'amountPaisa', 'reason', 'recordedByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['messId', 'monthKey', 'memberUid', 'memberName', 'amountPaisa', 'reason', 'recordedByUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         isValidAdjustment(incoming()) &&
+                         isMonthOpen(messId, incoming().monthKey) &&
+                         isMessManager(messId) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(adjustmentId) &&
+                         isValidAdjustment(incoming()) &&
+                         isMessManager(messId) &&
+                         incoming().messId == existing().messId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']);
+        allow delete: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(adjustmentId) &&
+                         isMonthOpen(messId, existing().monthKey) &&
+                         isMessManager(messId);
+      }
+
+      match /closings/{monthKey} {
+        allow get: if isSignedIn() && isValidId(messId) && isValidId(monthKey) && isMessMember(messId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(monthKey) &&
+                         incoming().messId == messId &&
+                         incoming().monthKey == monthKey &&
+                         incoming().closedByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['messId', 'monthKey', 'totalMealExpensePaisa', 'totalMealsText', 'mealRateText', 'totalDepositPaisa', 'totalExpensePaisa', 'closedByUid', 'closedByName', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['messId', 'monthKey', 'totalMealExpensePaisa', 'totalMealsText', 'mealRateText', 'totalDepositPaisa', 'totalExpensePaisa', 'closedByUid', 'closedByName', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         isValidClosing(incoming()) &&
+                         isMessManager(messId) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(monthKey) &&
+                         isValidClosing(incoming()) &&
+                         isMessManager(messId) &&
+                         incoming().messId == existing().messId &&
+                         incoming().monthKey == existing().monthKey &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow delete: if isSignedIn() && isValidId(messId) && isValidId(monthKey) && isMessManager(messId);
+      }
+
+      match /announcements/{announcementId} {
+        allow get: if isSignedIn() && isValidId(messId) && isValidId(announcementId) && isMessMember(messId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(announcementId) &&
+                         incoming().messId == messId &&
+                         incoming().authorUid == request.auth.uid &&
+                         incoming().keys().hasAll(['messId', 'title', 'body', 'authorUid', 'authorName', 'pinned', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['messId', 'title', 'body', 'authorUid', 'authorName', 'pinned', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         isValidAnnouncement(incoming()) &&
+                         isMessAdminOrAssistant(messId) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(announcementId) &&
+                         isValidAnnouncement(incoming()) &&
+                         isMessManager(messId) &&
+                         incoming().messId == existing().messId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']);
+        allow delete: if isSignedIn() && isValidId(messId) && isValidId(announcementId) && isMessAdminOrAssistant(messId);
+      }
+
+      match /chat/{messageId} {
+        allow get: if isSignedIn() && isValidId(messId) && isValidId(messageId) && isMessMember(messId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(messageId) &&
+                         incoming().messId == messId &&
+                         incoming().senderUid == request.auth.uid &&
+                         incoming().keys().hasAll(['messId', 'senderUid', 'senderName', 'text', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['messId', 'senderUid', 'senderName', 'text', 'memberUids', 'createdAt', 'updatedAt']) &&
+                         isValidChatMessage(incoming()) &&
+                         isMessMember(messId) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(messageId) &&
+                         isValidChatMessage(incoming()) &&
+                         isMessManager(messId) &&
+                         incoming().messId == existing().messId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']);
+        allow delete: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(messageId) &&
+                         (isMessManager(messId) || existing().senderUid == request.auth.uid);
+      }
+
+      match /audit_logs/{logId} {
+        allow get: if isSignedIn() && isValidId(messId) && isValidId(logId) && isMessMember(messId);
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow create: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(logId) &&
+                         incoming().messId == messId &&
+                         incoming().actorUid == request.auth.uid &&
+                         incoming().keys().hasAll(['messId', 'action', 'details', 'actorUid', 'actorName', 'memberUids', 'createdAt']) &&
+                         incoming().keys().hasOnly(['messId', 'action', 'details', 'actorUid', 'actorName', 'memberUids', 'createdAt']) &&
+                         isValidAuditLog(incoming()) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         (isMessMember(messId) ||
+                          (existsAfter(messPath(messId)) &&
+                           getAfter(messPath(messId)).data.ownerId == request.auth.uid));
+        allow update: if isSignedIn() &&
+                         isValidId(messId) &&
+                         isValidId(logId) &&
+                         isValidAuditLog(incoming()) &&
+                         isMessManager(messId) &&
+                         incoming().messId == existing().messId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['memberUids']);
+        allow delete: if false;
+      }
+    }
+  }
+}
